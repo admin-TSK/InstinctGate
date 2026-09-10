@@ -4,8 +4,17 @@ import { setTimeout as sleep } from "node:timers/promises";
 const PORT = 8799;
 const BASE = `http://127.0.0.1:${PORT}`;
 
+// Default smoke exercises the stub path (strip Stripe keys so CI is deterministic).
+// Set SMOKE_STRIPE_LIVE=1 to keep keys and assert live Checkout.
+const liveSmoke = process.env.SMOKE_STRIPE_LIVE === "1";
+const childEnv = { ...process.env, PORT: String(PORT), HOST: "127.0.0.1" };
+if (!liveSmoke) {
+  delete childEnv.STRIPE_SECRET_KEY;
+  delete childEnv.STRIPE_PRICE_ID;
+}
+
 const child = spawn("node", ["dist/index.js"], {
-  env: { ...process.env, PORT: String(PORT), HOST: "127.0.0.1" },
+  env: childEnv,
   stdio: ["ignore", "pipe", "pipe"],
 });
 
@@ -35,7 +44,7 @@ try {
 
   const health = await fetch(`${BASE}/health`).then((r) => r.json());
   assert(health.ok === true, "health.ok");
-  assert(health.stripe === false, "health.stripe must be false");
+  assert(health.stripe === liveSmoke, `health.stripe expected ${liveSmoke}`);
   assert(health.pricing?.free_tier === false, "no free tier");
   assert(health.pricing?.card_required === true, "card required");
 
@@ -52,17 +61,26 @@ try {
   }).then(async (r) => ({ status: r.status, body: await r.json() }));
   assert(me.status === 200, `me status ${me.status}`);
   assert(me.body.product?.free_tier === false, "me free_tier false");
-  assert(me.body.stripe_live === false, "me stripe_live false");
+  assert(me.body.stripe_live === liveSmoke, `me stripe_live expected ${liveSmoke}`);
 
   const checkout = await fetch(`${BASE}/v1/billing/checkout-session`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ email: "smoke@example.com" }),
   }).then((r) => r.json());
-  assert(checkout.live === false, "checkout must not be live");
-  assert(checkout.checkout_url === null, "no fake checkout_url");
   assert(checkout.trial_period_days === 7, "trial 7 days");
   assert(checkout.requires?.includes("card"), "card required");
+  if (liveSmoke) {
+    assert(checkout.live === true, "checkout must be live");
+    assert(
+      typeof checkout.checkout_url === "string" &&
+        checkout.checkout_url.startsWith("https://"),
+      "live checkout_url required"
+    );
+  } else {
+    assert(checkout.live === false, "checkout must not be live");
+    assert(checkout.checkout_url === null, "no fake checkout_url");
+  }
 
   const wait = await fetch(`${BASE}/v1/billing/waitlist`, {
     method: "POST",
@@ -130,7 +148,7 @@ try {
   assert(revoked.status === 200, "revoke ok");
   assert(revoked.body.revoked === true, "revoked");
 
-  console.log("SMOKE OK");
+  console.log(liveSmoke ? "SMOKE OK (stripe live)" : "SMOKE OK");
   process.exitCode = 0;
 } catch (err) {
   console.error("SMOKE FAIL", err);

@@ -1,28 +1,29 @@
-# InstinctGate Pro API (stub)
+# InstinctGate Pro API
 
 Minimal Fastify TypeScript service matching the sketches in `../PRO.md`.
 
-**This is NOT production.** There is no Stripe, no durable database, no magic-link email, and no real billing. Tokens and waitlist live in memory and vanish when the process exits.
+Tokens and waitlist live in memory and vanish when the process exits. Stripe Checkout Sessions are created when `STRIPE_SECRET_KEY` and `STRIPE_PRICE_ID` are present in the process environment (do not commit keys; keep them outside the repo).
 
 ## Endpoints
 
 | Method | Path | Auth | Notes |
 |--------|------|------|-------|
-| GET | `/health` | none | Liveness; `stripe: false`; pricing lock echoed |
+| GET | `/health` | none | Liveness; `stripe: true` when keys set; pricing lock echoed |
 | POST | `/v1/auth/device` | none | Stub `{ device_token, expires_at }` |
 | POST | `/v1/auth/revoke` | Bearer or body | Revoke device token |
 | GET | `/v1/me` | Bearer | Account + entitlement stub |
-| POST | `/v1/billing/checkout-session` | none | **Always** `live: false`, `checkout_url: null` (no fake Checkout) |
+| POST | `/v1/billing/checkout-session` | none | Stub `live: false` / `checkout_url: null` without keys; live Session + `checkout_url` when keys set |
 | POST | `/v1/billing/waitlist` | none | Collect trial waitlist email |
 | GET | `/v1/billing/waitlist` | none | In-memory count |
 | POST | `/v1/vault/sync` | Bearer | Accept `{ instincts[], skills[] }` → `{ accepted[], conflicts[] }` |
 | POST | `/v1/scorecards` | Bearer | Push one scorecard |
 
-## Pricing lock (stub echoes this)
+## Pricing lock
 
 - No free tier
-- 7-day trial; account + card required when Stripe is live
+- 7-day trial; account + card required (`payment_method_collection: always`)
 - Draft ~A$29 AUD/mo per seat
+- Live Checkout: `mode: subscription`, `subscription_data.trial_period_days: 7`, omit `payment_method_types`
 
 ## Run locally
 
@@ -30,6 +31,7 @@ Minimal Fastify TypeScript service matching the sketches in `../PRO.md`.
 cd pro-api
 npm install
 npm run build
+# optional: set STRIPE_SECRET_KEY + STRIPE_PRICE_ID from outside the repo
 npm start
 # listens on http://0.0.0.0:8787 (override with PORT / HOST)
 ```
@@ -40,7 +42,7 @@ Dev watch:
 npm run dev
 ```
 
-Smoke:
+Smoke (stub path by default; `SMOKE_STRIPE_LIVE=1` keeps env keys for a live Checkout assert):
 
 ```bash
 npm run smoke
@@ -66,11 +68,11 @@ curl -s -X POST localhost:8787/v1/billing/waitlist \
   -d '{"email":"dev@example.com","source":"curl"}' | jq
 ```
 
-## Explicit non-goals (this stub)
+## Explicit non-goals (still stub)
 
-- No Stripe Checkout / Customer Portal / webhooks
+- No Customer Portal / webhooks yet
 - No SQLite persistence (in-memory only)
 - No teams / seats
 - No production auth (anyone can mint a stub token)
 
-When real billing ships, keep paid-subscription-only; local vault remains a cache for entitled seats.
+When real billing ships fully, keep paid-subscription-only; local vault remains a cache for entitled seats.
