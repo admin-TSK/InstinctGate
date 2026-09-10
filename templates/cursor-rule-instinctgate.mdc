@@ -1,0 +1,16 @@
+---
+description: InstinctGate — capture instincts and score verification after agent sessions
+globs:
+alwaysApply: false
+---
+
+# InstinctGate post-session loop
+
+When a coding session is wrapping up (feature shipped, bug fixed, or you are about to stop):
+
+1. Write a short **session summary** Markdown file (what changed, lessons, gotchas, bullets preferred).
+2. Run: `npx instinctgate capture <summary.md>`
+3. If an instinct looks durable, run: `npx instinctgate promote <instinct-id>`
+4. Fill a tiny rubric JSON (`plan`, `tests`, `review`, `verify` booleans) and run: `npx instinctgate score <rubric.json>`
+
+Do **not** invent a large skill catalog. Prefer 1–5 high-signal instincts per session. Vault lives in `.instinctgate/`.
