@@ -1,0 +1,38 @@
+{
+  "name": "instinctgate",
+  "version": "0.1.0",
+  "description": "After each agent session: extract instincts, promote skills, score verification. One command: npx instinctgate setup",
+  "type": "module",
+  "bin": {
+    "instinctgate": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "fixtures",
+    "templates"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "smoke": "npm run build && node scripts/smoke.mjs",
+    "test": "npm run smoke",
+    "setup": "node dist/index.js setup"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "agents",
+    "cursor",
+    "claude",
+    "instincts",
+    "skills",
+    "verification",
+    "instinctgate"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.17.0",
+    "typescript": "^5.6.3"
+  }
+}
