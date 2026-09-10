@@ -1,0 +1,7 @@
+{
+  "session": "instinctgate-cli-scaffold",
+  "plan": true,
+  "tests": true,
+  "review": false,
+  "verify": true
+}
