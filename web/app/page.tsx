@@ -9,7 +9,7 @@ export default function HomePage() {
           <a href="#product">Product</a>
           <a href="#pricing">Pricing</a>
           <a href="#install">Install</a>
-          <a href="/trial">Trial</a>
+          <a href="https://buy.stripe.com/test_8x2eVdexg9KWcxV8df1wY00">Trial</a>
         </nav>
       </header>
 
@@ -27,7 +27,7 @@ export default function HomePage() {
             scoreboard included.
           </p>
           <div className="cta-row">
-            <a className="btn btn-primary" href="/trial">
+            <a className="btn btn-primary" href="https://buy.stripe.com/test_8x2eVdexg9KWcxV8df1wY00">
               Start 7-day trial
             </a>
             <a className="btn btn-ghost" href="#install">
@@ -35,8 +35,9 @@ export default function HomePage() {
             </a>
           </div>
           <span className="pro-tease">
-            Draft about A$29 AUD/mo after trial. Card required to start. Stripe
-            Checkout not live yet; no fake paid checkout.
+            About A$29 AUD/mo after a 7-day trial. Account and card required.
+            Checkout is Stripe test mode until the sandbox is claimed and Vercel
+            is live.
           </span>
         </section>
 
@@ -100,13 +101,13 @@ export default function HomePage() {
             </p>
           </article>
           <div className="cta-row" style={{ marginTop: "1.25rem" }}>
-            <a className="btn btn-primary" href="/trial">
+            <a className="btn btn-primary" href="https://buy.stripe.com/test_8x2eVdexg9KWcxV8df1wY00">
               Start 7-day trial
             </a>
           </div>
           <p className="install-note">
-            Real Stripe Checkout is not wired yet. CTA goes to the{" "}
-            <a href="/trial">/trial</a> waitlist; no fake Checkout URL.
+            Stripe test Checkout is live. Use a Stripe test card. Live money
+            starts after the sandbox is claimed.
           </p>
         </section>
 
@@ -131,7 +132,7 @@ export default function HomePage() {
             helps your agents compound.
           </p>
           <div className="cta-row" style={{ marginTop: "1rem" }}>
-            <a className="btn btn-primary" href="/trial">
+            <a className="btn btn-primary" href="https://buy.stripe.com/test_8x2eVdexg9KWcxV8df1wY00">
               Start 7-day trial
             </a>
           </div>
