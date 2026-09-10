@@ -1,8 +1,23 @@
 import Fastify from "fastify";
+import Stripe from "stripe";
 import { store } from "./store.js";
 
 const PORT = Number(process.env.PORT ?? 8787);
 const HOST = process.env.HOST ?? "0.0.0.0";
+
+/** Stripe keys from process.env only (never load stripe.env from the repo). */
+const STRIPE_SECRET_KEY = (process.env.STRIPE_SECRET_KEY ?? "").trim();
+const STRIPE_PRICE_ID = (process.env.STRIPE_PRICE_ID ?? "").trim();
+const stripeConfigured = Boolean(STRIPE_SECRET_KEY && STRIPE_PRICE_ID);
+
+const stripe = stripeConfigured
+  ? new Stripe(STRIPE_SECRET_KEY)
+  : null;
+
+const FALLBACK_SUCCESS_URL =
+  "https://github.com/admin-TSK/InstinctGate?checkout=success";
+const FALLBACK_CANCEL_URL =
+  "https://github.com/admin-TSK/InstinctGate?checkout=cancel";
 
 const app = Fastify({ logger: true });
 
@@ -16,18 +31,27 @@ function isEmail(value: unknown): value is string {
   return typeof value === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 }
 
+function urlOrFallback(value: unknown, fallback: string): string {
+  if (typeof value === "string" && /^https?:\/\//i.test(value.trim())) {
+    return value.trim();
+  }
+  return fallback;
+}
+
 app.get("/health", async () => ({
   ok: true,
   service: "instinctgate-pro-api",
-  stub: true,
-  stripe: false,
+  stub: !stripeConfigured,
+  stripe: stripeConfigured,
   pricing: {
     free_tier: false,
     trial_days: 7,
     card_required: true,
     price_aud_mo: 29,
   },
-  note: "Local stub only. Not production. No Stripe Checkout.",
+  note: stripeConfigured
+    ? "Stripe TEST keys present. Checkout Sessions are live."
+    : "Local stub only. Not production. No Stripe Checkout until STRIPE_SECRET_KEY + STRIPE_PRICE_ID are set.",
 }));
 
 /** Stub device auth: returns a disposable device_token. No magic-link yet. */
@@ -86,36 +110,84 @@ app.get("/v1/me", async (req, reply) => {
       price_aud_mo: 29,
     },
     stub: true,
-    stripe_live: false,
+    stripe_live: stripeConfigured,
   };
 });
 
 /**
- * Checkout session stub. Never returns a live Stripe URL.
- * Contract for when Stripe is wired: 7-day trial + card upfront + AUD.
+ * Checkout session: live Stripe when STRIPE_SECRET_KEY + STRIPE_PRICE_ID are set;
+ * otherwise stub with live:false and checkout_url:null.
+ * Contract: 7-day trial + card upfront + subscription mode.
  */
 app.post<{
   Body: { email?: string; success_url?: string; cancel_url?: string };
-}>("/v1/billing/checkout-session", async (req) => {
+}>("/v1/billing/checkout-session", async (req, reply) => {
   const email = isEmail(req.body?.email) ? req.body!.email!.trim().toLowerCase() : null;
-  return {
-    live: false,
-    stripe_live: false,
-    mode: "subscription",
-    currency: "aud",
-    price_aud_mo: 29,
-    trial_period_days: 7,
-    payment_method_collection: "always",
-    requires: ["account", "card"],
-    free_tier: false,
-    email,
-    success_url: req.body?.success_url ?? null,
-    cancel_url: req.body?.cancel_url ?? null,
-    checkout_url: null,
-    message:
-      "Stripe Checkout is not live. Start waitlist via POST /v1/billing/waitlist. Human blocker: Jeremy Stripe account + Checkout (trial + card upfront) + Customer Portal.",
-    stub: true,
-  };
+  const success_url = urlOrFallback(req.body?.success_url, FALLBACK_SUCCESS_URL);
+  const cancel_url = urlOrFallback(req.body?.cancel_url, FALLBACK_CANCEL_URL);
+
+  if (!stripeConfigured || !stripe) {
+    return {
+      live: false,
+      stripe_live: false,
+      mode: "subscription",
+      currency: "aud",
+      price_aud_mo: 29,
+      trial_period_days: 7,
+      payment_method_collection: "always",
+      requires: ["account", "card"],
+      free_tier: false,
+      email,
+      success_url: req.body?.success_url ?? null,
+      cancel_url: req.body?.cancel_url ?? null,
+      checkout_url: null,
+      message:
+        "Stripe Checkout is not live. Start waitlist via POST /v1/billing/waitlist. Set STRIPE_SECRET_KEY + STRIPE_PRICE_ID to enable Checkout Sessions.",
+      stub: true,
+    };
+  }
+
+  try {
+    const sessionParams: Stripe.Checkout.SessionCreateParams = {
+      mode: "subscription",
+      line_items: [{ price: STRIPE_PRICE_ID, quantity: 1 }],
+      subscription_data: { trial_period_days: 7 },
+      payment_method_collection: "always",
+      success_url,
+      cancel_url,
+    };
+    if (email) {
+      sessionParams.customer_email = email;
+    }
+
+    const session = await stripe.checkout.sessions.create(sessionParams);
+
+    return {
+      live: true,
+      stripe_live: true,
+      mode: "subscription",
+      currency: "aud",
+      price_aud_mo: 29,
+      trial_period_days: 7,
+      payment_method_collection: "always",
+      requires: ["account", "card"],
+      free_tier: false,
+      email,
+      success_url,
+      cancel_url,
+      checkout_url: session.url,
+      session_id: session.id,
+      stub: false,
+    };
+  } catch (err) {
+    req.log.error({ err }, "stripe checkout.sessions.create failed");
+    return reply.code(502).send({
+      error: "stripe_checkout_failed",
+      message: "Failed to create Stripe Checkout Session.",
+      live: false,
+      checkout_url: null,
+    });
+  }
 });
 
 /** Trial waitlist until Stripe Checkout is live. */
@@ -137,10 +209,11 @@ app.post<{
     waitlisted: true,
     email: entry.email,
     created_at: entry.created_at,
-    next:
-      "When Stripe is live you will get Checkout (7-day trial, card required). No free tier.",
+    next: stripeConfigured
+      ? "Stripe Checkout is available via POST /v1/billing/checkout-session (7-day trial, card required). No free tier."
+      : "When Stripe is live you will get Checkout (7-day trial, card required). No free tier.",
     stub: true,
-    stripe_live: false,
+    stripe_live: stripeConfigured,
   };
 });
 
@@ -205,7 +278,9 @@ app.post<{
 async function main() {
   await app.listen({ port: PORT, host: HOST });
   app.log.info(
-    `InstinctGate Pro API stub on http://${HOST}:${PORT} (NOT production, no Stripe)`
+    stripeConfigured
+      ? `InstinctGate Pro API on http://${HOST}:${PORT} (Stripe Checkout enabled)`
+      : `InstinctGate Pro API stub on http://${HOST}:${PORT} (NOT production, no Stripe)`
   );
 }
 
