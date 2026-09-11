@@ -33,14 +33,25 @@ export type WaitlistEntry = {
   source?: string;
 };
 
+export type EntitlementStatus =
+  | "none"
+  | "waitlisted"
+  | "trialing"
+  | "active"
+  | "cancelled"
+  | "unpaid";
+
 export type Entitlement = {
-  status: "none" | "waitlisted" | "trialing" | "active" | "cancelled" | "unpaid";
+  status: EntitlementStatus;
   plan: "subscription";
   price_aud_mo: number;
   trial_days: number;
   trial_ends_at: string | null;
   seats: number;
-  stripe_live: false;
+  stripe_customer_id: string | null;
+  stripe_subscription_id: string | null;
+  stripe_live: boolean;
+  updated_at: string | null;
 };
 
 /** In-memory stub store. Not durable. Not production. */
@@ -50,8 +61,11 @@ export class MemoryStore {
   skills = new Map<string, Skill>();
   scorecards: Scorecard[] = [];
   waitlist: WaitlistEntry[] = [];
-  /** email -> entitlement (stub; no Stripe) */
+  /** email -> entitlement */
   accounts = new Map<string, Entitlement>();
+  /** stripe customer id -> email */
+  customersById = new Map<string, string>();
+  webhookEvents: Array<{ id: string; type: string; at: string }> = [];
 
   createDeviceToken(email?: string | null): DeviceToken {
     const token = `dev_${crypto.randomUUID().replace(/-/g, "")}`;
@@ -85,7 +99,7 @@ export class MemoryStore {
     return this.tokens.get(token);
   }
 
-  defaultEntitlement(): Entitlement {
+  defaultEntitlement(stripeLive = false): Entitlement {
     return {
       status: "none",
       plan: "subscription",
@@ -93,14 +107,22 @@ export class MemoryStore {
       trial_days: 7,
       trial_ends_at: null,
       seats: 0,
-      stripe_live: false,
+      stripe_customer_id: null,
+      stripe_subscription_id: null,
+      stripe_live: stripeLive,
+      updated_at: null,
     };
   }
 
-  entitlementForEmail(email: string | null | undefined): Entitlement {
-    if (!email) return this.defaultEntitlement();
+  entitlementForEmail(
+    email: string | null | undefined,
+    stripeLive = false
+  ): Entitlement {
+    if (!email) return this.defaultEntitlement(stripeLive);
     const key = email.trim().toLowerCase();
-    return this.accounts.get(key) ?? this.defaultEntitlement();
+    const existing = this.accounts.get(key);
+    if (!existing) return this.defaultEntitlement(stripeLive);
+    return { ...existing, stripe_live: stripeLive || existing.stripe_live };
   }
 
   addWaitlist(email: string, source?: string): WaitlistEntry {
@@ -117,9 +139,61 @@ export class MemoryStore {
       this.accounts.set(normalized, {
         ...this.defaultEntitlement(),
         status: "waitlisted",
+        updated_at: entry.created_at,
       });
     }
     return entry;
+  }
+
+  applyEntitlement(input: {
+    email?: string | null;
+    customer_id?: string | null;
+    subscription_id?: string | null;
+    status: EntitlementStatus;
+    trial_ends_at?: string | null;
+    seats?: number;
+    stripe_live?: boolean;
+  }): Entitlement | null {
+    let email = input.email?.trim().toLowerCase() || null;
+    if (!email && input.customer_id) {
+      email = this.customersById.get(input.customer_id) ?? null;
+    }
+    if (!email) return null;
+
+    if (input.customer_id) {
+      this.customersById.set(input.customer_id, email);
+    }
+
+    const prev = this.accounts.get(email) ?? this.defaultEntitlement();
+    const next: Entitlement = {
+      ...prev,
+      status: input.status,
+      trial_ends_at:
+        input.trial_ends_at === undefined
+          ? prev.trial_ends_at
+          : input.trial_ends_at,
+      seats:
+        input.seats ??
+        (input.status === "trialing" || input.status === "active" ? 1 : 0),
+      stripe_customer_id: input.customer_id ?? prev.stripe_customer_id,
+      stripe_subscription_id:
+        input.subscription_id ?? prev.stripe_subscription_id,
+      stripe_live: input.stripe_live ?? prev.stripe_live,
+      updated_at: new Date().toISOString(),
+    };
+    this.accounts.set(email, next);
+    return next;
+  }
+
+  rememberWebhook(id: string, type: string): boolean {
+    if (this.webhookEvents.some((e) => e.id === id)) return false;
+    this.webhookEvents.unshift({
+      id,
+      type,
+      at: new Date().toISOString(),
+    });
+    if (this.webhookEvents.length > 100) this.webhookEvents.length = 100;
+    return true;
   }
 
   syncVault(body: {
@@ -172,9 +246,11 @@ export class MemoryStore {
     return { accepted, conflicts };
   }
 
-  addScorecard(payload: Omit<Scorecard, "id" | "created_at"> & {
-    id?: string;
-  }): Scorecard {
+  addScorecard(
+    payload: Omit<Scorecard, "id" | "created_at"> & {
+      id?: string;
+    }
+  ): Scorecard {
     const card: Scorecard = {
       ...payload,
       id: payload.id ?? `sc_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`,
