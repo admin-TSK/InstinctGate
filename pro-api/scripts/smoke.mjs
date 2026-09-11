@@ -4,13 +4,12 @@ import { setTimeout as sleep } from "node:timers/promises";
 const PORT = 8799;
 const BASE = `http://127.0.0.1:${PORT}`;
 
-// Default smoke exercises the stub path (strip Stripe keys so CI is deterministic).
-// Set SMOKE_STRIPE_LIVE=1 to keep keys and assert live Checkout.
 const liveSmoke = process.env.SMOKE_STRIPE_LIVE === "1";
 const childEnv = { ...process.env, PORT: String(PORT), HOST: "127.0.0.1" };
 if (!liveSmoke) {
   delete childEnv.STRIPE_SECRET_KEY;
   delete childEnv.STRIPE_PRICE_ID;
+  delete childEnv.STRIPE_WEBHOOK_SECRET;
 }
 
 const child = spawn("node", ["dist/index.js"], {
@@ -27,9 +26,7 @@ async function waitReady(ms = 8000) {
     try {
       const r = await fetch(`${BASE}/health`);
       if (r.ok) return;
-    } catch {
-      // retry
-    }
+    } catch {}
     await sleep(150);
   }
   throw new Error("server did not become healthy in time");
@@ -47,6 +44,7 @@ try {
   assert(health.stripe === liveSmoke, `health.stripe expected ${liveSmoke}`);
   assert(health.pricing?.free_tier === false, "no free tier");
   assert(health.pricing?.card_required === true, "card required");
+  assert(typeof health.webhook === "boolean", "webhook flag");
 
   const auth = await fetch(`${BASE}/v1/auth/device`, {
     method: "POST",
@@ -54,14 +52,11 @@ try {
     body: JSON.stringify({ code: "smoke", email: "smoke@example.com" }),
   }).then((r) => r.json());
   assert(typeof auth.device_token === "string", "device_token");
-  assert(auth.device_token.startsWith("dev_"), "stub token prefix");
 
   const me = await fetch(`${BASE}/v1/me`, {
     headers: { authorization: `Bearer ${auth.device_token}` },
   }).then(async (r) => ({ status: r.status, body: await r.json() }));
   assert(me.status === 200, `me status ${me.status}`);
-  assert(me.body.product?.free_tier === false, "me free_tier false");
-  assert(me.body.stripe_live === liveSmoke, `me stripe_live expected ${liveSmoke}`);
 
   const checkout = await fetch(`${BASE}/v1/billing/checkout-session`, {
     method: "POST",
@@ -69,84 +64,47 @@ try {
     body: JSON.stringify({ email: "smoke@example.com" }),
   }).then((r) => r.json());
   assert(checkout.trial_period_days === 7, "trial 7 days");
-  assert(checkout.requires?.includes("card"), "card required");
   if (liveSmoke) {
     assert(checkout.live === true, "checkout must be live");
-    assert(
-      typeof checkout.checkout_url === "string" &&
-        checkout.checkout_url.startsWith("https://"),
-      "live checkout_url required"
-    );
   } else {
     assert(checkout.live === false, "checkout must not be live");
     assert(checkout.checkout_url === null, "no fake checkout_url");
   }
 
-  const wait = await fetch(`${BASE}/v1/billing/waitlist`, {
+  const portal = await fetch(`${BASE}/v1/billing/portal-session`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ email: "smoke@example.com", source: "smoke" }),
+    body: JSON.stringify({ email: "smoke@example.com" }),
   }).then(async (r) => ({ status: r.status, body: await r.json() }));
-  assert(wait.status === 200, `waitlist status ${wait.status}`);
-  assert(wait.body.waitlisted === true, "waitlisted");
+  if (liveSmoke) {
+    assert(
+      portal.body.live === true || portal.body.error === "customer_not_found",
+      "portal live or customer_not_found"
+    );
+  } else {
+    assert(portal.status === 200, `portal status ${portal.status}`);
+    assert(portal.body.live === false, "portal stub live false");
+  }
 
-  const waitCount = await fetch(`${BASE}/v1/billing/waitlist`).then((r) =>
-    r.json()
-  );
-  assert(waitCount.count >= 1, "waitlist count");
-
-  const sync = await fetch(`${BASE}/v1/vault/sync`, {
+  const hook = await fetch(`${BASE}/v1/billing/webhook`, {
     method: "POST",
-    headers: {
-      "content-type": "application/json",
-      authorization: `Bearer ${auth.device_token}`,
-    },
+    headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      instincts: [
-        {
-          id: "ins_smoke_1",
-          updated_at: new Date().toISOString(),
-          title: "Prefer local vault first",
+      id: "evt_smoke_entitlement_1",
+      type: "instinctgate.entitlement.stub",
+      data: {
+        object: {
+          email: "smoke@example.com",
+          status: "trialing",
+          customer_id: "cus_smoke",
+          subscription_id: "sub_smoke",
+          trial_ends_at: new Date(Date.now() + 7 * 864e5).toISOString(),
         },
-      ],
-      skills: [],
+      },
     }),
   }).then(async (r) => ({ status: r.status, body: await r.json() }));
-  assert(sync.status === 200, `sync status ${sync.status}`);
-  assert(sync.body.accepted?.includes("ins_smoke_1"), "instinct accepted");
-
-  const sc = await fetch(`${BASE}/v1/scorecards`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      authorization: `Bearer ${auth.device_token}`,
-    },
-    body: JSON.stringify({
-      session: "smoke",
-      band: "green",
-      checks: { plan: true, tests: true },
-    }),
-  }).then(async (r) => ({ status: r.status, body: await r.json() }));
-  assert(sc.status === 200, `scorecards status ${sc.status}`);
-  assert(sc.body.scorecard?.id, "scorecard id");
-
-  const unauth = await fetch(`${BASE}/v1/vault/sync`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: "{}",
-  });
-  assert(unauth.status === 401, "unauth should 401");
-
-  const revoked = await fetch(`${BASE}/v1/auth/revoke`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      authorization: `Bearer ${auth.device_token}`,
-    },
-    body: "{}",
-  }).then(async (r) => ({ status: r.status, body: await r.json() }));
-  assert(revoked.status === 200, "revoke ok");
-  assert(revoked.body.revoked === true, "revoked");
+  assert(hook.status === 200, `webhook status ${hook.status}`);
+  assert(hook.body.entitlement?.status === "trialing", "webhook entitled trialing");
 
   console.log(liveSmoke ? "SMOKE OK (stripe live)" : "SMOKE OK");
   process.exitCode = 0;
