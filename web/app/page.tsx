@@ -1,3 +1,5 @@
+import { PRICE_AUD_MO, STRIPE_TEST_PAYMENT_LINK, TRIAL_DAYS } from "../lib/billing";
+
 export default function HomePage() {
   return (
     <div className="wrap">
@@ -9,7 +11,7 @@ export default function HomePage() {
           <a href="#product">Product</a>
           <a href="#pricing">Pricing</a>
           <a href="#install">Install</a>
-          <a href="https://buy.stripe.com/test_8x2eVdexg9KWcxV8df1wY00">Trial</a>
+          <a href={STRIPE_TEST_PAYMENT_LINK}>Trial</a>
         </nav>
       </header>
 
@@ -22,22 +24,22 @@ export default function HomePage() {
             actually stuck.
           </p>
           <p className="subhead">
-            A thin bolt-on for Cursor and Claude. Paid cloud product with a
-            7-day trial. Account and card required. Hosted vault sync and a web
-            scoreboard included.
+            A thin bolt-on for Cursor and Claude. Paid cloud product with a{" "}
+            {TRIAL_DAYS}-day trial. Account and card required. Hosted vault sync
+            and a web scoreboard included.
           </p>
           <div className="cta-row">
-            <a className="btn btn-primary" href="https://buy.stripe.com/test_8x2eVdexg9KWcxV8df1wY00">
-              Start 7-day trial
+            <a className="btn btn-primary" href={STRIPE_TEST_PAYMENT_LINK}>
+              Start {TRIAL_DAYS}-day trial
             </a>
             <a className="btn btn-ghost" href="#install">
               Install after signup
             </a>
           </div>
           <span className="pro-tease">
-            About A$29 AUD/mo after a 7-day trial. Account and card required.
-            Checkout is Stripe test mode until the sandbox is claimed and Vercel
-            is live.
+            About A${PRICE_AUD_MO} AUD/mo after a {TRIAL_DAYS}-day trial. Account
+            and card required. Checkout is Stripe test mode until the sandbox is
+            claimed and Vercel is live.
           </span>
         </section>
 
@@ -85,11 +87,12 @@ export default function HomePage() {
             <h3>InstinctGate subscription</h3>
             <p>
               <strong>No free tier.</strong> Paid subscription only. Draft
-              about <strong>A$29 AUD per month</strong> per seat.
+              about <strong>A${PRICE_AUD_MO} AUD per month</strong> per seat.
             </p>
             <p style={{ marginTop: "0.75rem" }}>
-              <strong>7-day trial</strong> with account + credit card collected
-              upfront (Stripe subscription trial with payment method on file).
+              <strong>{TRIAL_DAYS}-day trial</strong> with account + credit card
+              collected upfront (Stripe subscription trial with payment method on
+              file).
             </p>
             <p style={{ marginTop: "0.75rem" }}>
               Includes hosted vault sync, web scoreboard, multi-device recall,
@@ -101,8 +104,8 @@ export default function HomePage() {
             </p>
           </article>
           <div className="cta-row" style={{ marginTop: "1.25rem" }}>
-            <a className="btn btn-primary" href="https://buy.stripe.com/test_8x2eVdexg9KWcxV8df1wY00">
-              Start 7-day trial
+            <a className="btn btn-primary" href={STRIPE_TEST_PAYMENT_LINK}>
+              Start {TRIAL_DAYS}-day trial
             </a>
           </div>
           <p className="install-note">
@@ -120,20 +123,20 @@ export default function HomePage() {
           </div>
           <p className="install-note">
             For trial and paid customers. Vault, Cursor rule, Claude skill,
-            smoke capture. Start the 7-day trial (account + card) before
-            treating install as the happy path.
+            smoke capture. Start the {TRIAL_DAYS}-day trial (account + card)
+            before treating install as the happy path.
           </p>
         </section>
 
         <section id="cta">
           <h2>Next step</h2>
           <p className="problem">
-            Start the 7-day trial. Then run setup. Star the repo if the loop
-            helps your agents compound.
+            Start the {TRIAL_DAYS}-day trial. Then run setup. Star the repo if
+            the loop helps your agents compound.
           </p>
           <div className="cta-row" style={{ marginTop: "1rem" }}>
-            <a className="btn btn-primary" href="https://buy.stripe.com/test_8x2eVdexg9KWcxV8df1wY00">
-              Start 7-day trial
+            <a className="btn btn-primary" href={STRIPE_TEST_PAYMENT_LINK}>
+              Start {TRIAL_DAYS}-day trial
             </a>
           </div>
         </section>
@@ -145,8 +148,8 @@ export default function HomePage() {
           Just the loop that makes agents compound.
         </p>
         <p>
-          InstinctGate - paid SaaS with a card-required 7-day trial. No free
-          tier.
+          InstinctGate - paid SaaS with a card-required {TRIAL_DAYS}-day trial.
+          No free tier.
         </p>
       </footer>
     </div>
