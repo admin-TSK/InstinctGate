@@ -2,6 +2,7 @@ import Fastify from "fastify";
 import Stripe from "stripe";
 import { store } from "./store.js";
 import { registerPortalRoutes } from "./billing-portal.js";
+import { registerWebhookRoutes } from "./billing-webhook.js";
 
 const PORT = Number(process.env.PORT ?? 8787);
 const HOST = process.env.HOST ?? "0.0.0.0";
@@ -9,11 +10,11 @@ const HOST = process.env.HOST ?? "0.0.0.0";
 /** Stripe keys from process.env only (never load stripe.env from the repo). */
 const STRIPE_SECRET_KEY = (process.env.STRIPE_SECRET_KEY ?? "").trim();
 const STRIPE_PRICE_ID = (process.env.STRIPE_PRICE_ID ?? "").trim();
+const STRIPE_WEBHOOK_SECRET = (process.env.STRIPE_WEBHOOK_SECRET ?? "").trim();
 const stripeConfigured = Boolean(STRIPE_SECRET_KEY && STRIPE_PRICE_ID);
+const webhookConfigured = Boolean(STRIPE_SECRET_KEY && STRIPE_WEBHOOK_SECRET);
 
-const stripe = stripeConfigured
-  ? new Stripe(STRIPE_SECRET_KEY)
-  : null;
+const stripe = STRIPE_SECRET_KEY ? new Stripe(STRIPE_SECRET_KEY) : null;
 
 const FALLBACK_SUCCESS_URL =
   "https://github.com/admin-TSK/InstinctGate?checkout=success";
@@ -44,6 +45,7 @@ app.get("/health", async () => ({
   service: "instinctgate-pro-api",
   stub: !stripeConfigured,
   stripe: stripeConfigured,
+  webhook: webhookConfigured,
   pricing: {
     free_tier: false,
     trial_days: 7,
@@ -131,6 +133,12 @@ app.post<{ Body: { email?: string; success_url?: string; cancel_url?: string } }
 });
 
 registerPortalRoutes(app, { stripe, stripeSecretKey: STRIPE_SECRET_KEY });
+registerWebhookRoutes(app, {
+  stripe,
+  stripeConfigured,
+  webhookConfigured,
+  webhookSecret: STRIPE_WEBHOOK_SECRET,
+});
 
 app.post<{ Body: { email?: string; source?: string } }>("/v1/billing/waitlist", async (req, reply) => {
   if (!isEmail(req.body?.email)) {
@@ -179,7 +187,7 @@ async function main() {
   await app.listen({ port: PORT, host: HOST });
   app.log.info(
     stripeConfigured
-      ? `InstinctGate Pro API on http://${HOST}:${PORT} (Stripe Checkout enabled)`
+      ? `InstinctGate Pro API on http://${HOST}:${PORT} (Stripe Checkout enabled; webhook=${webhookConfigured})`
       : `InstinctGate Pro API stub on http://${HOST}:${PORT} (NOT production, no Stripe)`
   );
 }
